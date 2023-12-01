@@ -1,0 +1,688 @@
+---
+title: "Analyzing Diabetes Data with Machine Learning"
+output: html_document
+author: Anu Bat
+---
+
+```{r}
+install.packages("DBI", repos = "https://cran.rstudio.com/")
+install.packages("vctrs", repos = "https://cran.rstudio.com/")
+install.packages('tidyverse', repos = "https://cran.rstudio.com/")
+install.packages("pROC",repos = "https://cran.rstudio.com/")
+install.packages("party", repos = "https://cran.rstudio.com/")
+install.packages("DAAG", repos = "https://cran.rstudio.com/")
+install.packages("VIM", repos = "https://cran.rstudio.com/")
+install.packages("caret", repos = "https://cran.rstudio.com/")
+install.packages("FNN", repos = "https://cran.rstudio.com/")
+install.packages("randomForest", repos = "https://cran.rstudio.com/")
+install.packages("e1071", repos = "https://cran.rstudio.com/")
+install.packages("neuralnet", repos = "https://cran.rstudio.com/")
+
+
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(pROC)
+library("party")
+library("DAAG") 
+library(VIM)
+library(caret)
+library(FNN)
+library(randomForest)
+library(e1071)
+library("neuralnet")
+
+setwd("/Users/anuyeruult/Downloads/AnalyzingDiabetesDatawithML") #set the working directory
+diabetes <- read.csv("PimaIndiansDiabetes.csv", header = T) #read the data.csv in and call it cancer_data
+head(diabetes)
+```
+
+1. Numeric vs. Categorical 
+
+```{r}
+#Converting the numeric variables to numeric type 
+diabetes$Pregnancies <- as.numeric(diabetes$Pregnancies)
+diabetes$Glucose <- as.numeric(diabetes$Glucose)
+diabetes$BloodPressure <- as.numeric(diabetes$BloodPressure)
+diabetes$SkinThickness <- as.numeric(diabetes$SkinThickness)
+diabetes$Insulin <- as.numeric(diabetes$Insulin)
+diabetes$BMI <- as.numeric(diabetes$BMI)
+diabetes$DiabetesPedigreeFunction <- as.numeric(diabetes$DiabetesPedigreeFunction)
+
+
+#Converting "Outcome" categorical variable to factor type
+diabetes$Outcome <- as.factor(diabetes$Outcome)
+```
+
+2.
+
+```{r}
+
+# Create a boxplot for each of variable to visualize the distribution of the values between diabetic and non-diabetic.
+ggplot(diabetes, aes(x = Outcome, y = Pregnancies, fill = Outcome)) +
+  geom_boxplot() +
+  labs(title = "Number of Pregnancies by Outcome", x = "Outcome", y = "Pregnancies")
+
+ggplot(diabetes, aes(x = Outcome, y = Glucose, fill=Outcome)) +
+  geom_boxplot() +
+  labs(title = "Glucose Level by Outcome", x = "Outcome", y = "Glucose Level")
+
+ggplot(diabetes, aes(x = Outcome, y = BloodPressure, fill=Outcome)) +
+  geom_boxplot() +
+  labs(title = "Blood Pressure by Outcome", x = "Outcome", y = "Blood Pressure")
+
+ggplot(diabetes, aes(x = Outcome, y = SkinThickness, fill=Outcome)) +
+  geom_boxplot() +
+  labs(title = "Skin Thickness by Outcome", x = "Outcome", y = "Skin Thickness")
+
+ggplot(diabetes, aes(x = Outcome, y = Insulin, fill=Outcome)) +
+  geom_boxplot() +
+  labs(title = "Insulin Level by Outcome", x = "Outcome", y = "Insulin Level")
+
+ggplot(diabetes, aes(x = Outcome, y = BMI, fill=Outcome)) +
+  geom_boxplot() +
+  labs(title = "BMI by Outcome", x = "Outcome", y = "BMI")
+
+ggplot(diabetes, aes(x = Outcome, y = DiabetesPedigreeFunction, fill=Outcome)) +
+  geom_boxplot() +
+  labs(title = "Diabetes Pedigree Function by Outcome", x = "Outcome", y = "Diabetes Pedigree Function")
+
+# create a table of counts for each value of Outcome
+outcome_counts <- table(diabetes$Outcome)
+
+# create a barplot of the counts
+barplot(outcome_counts, main="Outcome Distribution", xlab="Outcome", ylab="Count", col="blue")
+
+
+```
+
+3.
+
+Number of pregnancies - can be 0 
+Glucose - cannot be 0
+Blood pressure - cannot be 0
+Skin Thickness - cannot be 0 
+Insulin - cannot be 0 
+BMI - cannot be 0
+Age - cannot be 0
+
+We observe data set & found that some variable i.e Glucose,BloodPressure,SkinThickness,Insulin,BMI can not be exactly “zero” as its not possible practically so we need to replace these Zero values with NA to replace them with some value using kNN computation method.
+
+Use KNN Imputation method to remove NA
+This imputer utilizes the k-Nearest Neighbors method to replace the missing values in the datasets with the mean value from the parameter ‘n_neighbors’ nearest neighbors found in the training set. By default, it uses a Euclidean distance metric to impute the missing values.
+https://medium.com/@kyawsawhtoon/a-guide-to-knn-imputation-95e2dc496e
+
+The optimal K value usually found is the square root of N, where N is the total number of samples.
+https://towardsdatascience.com/how-to-find-the-optimal-value-of-k-in-knn-35d936e554eb
+
+```{r}
+summary(diabetes)
+
+#according to the summary, Glucose, BloodPressure, SkinThickness, Insulin, and BMI contain 0, which does not make sense for the variables. So, I will need to replace the zero values with NA. 
+
+diabetes0 <- diabetes[, c("Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI")]
+
+diabetes0[diabetes0=='0']=NA #Replacing 0 with NA 
+
+summary(diabetes0) #show the NA present in each variable 
+
+diabetes0<-kNN(diabetes0,k=sqrt(nrow(diabetes0))) #KNN Imputation method to remove NA. The square root of number of rows in the dataset because the "optimal K value usually found is the square root of N, where N is the total number of samples".
+
+#extract the necessary variables 
+diabetes0=diabetes0[,1:5]
+
+#Replace processed variables back into the dataset
+
+diabetes$Glucose=diabetes0$Glucose
+diabetes$BloodPressure=diabetes0$BloodPressure
+diabetes$SkinThickness=diabetes0$SkinThickness
+diabetes$Insulin=diabetes0$Insulin
+diabetes$BMI=diabetes0$BMI
+
+summary(diabetes)
+
+```
+
+4. Data Processing
+
+```{r}
+sub_diabetes = diabetes[,-9]
+head(sub_diabetes)
+
+sub_diabetes_norm <- as.data.frame(lapply(sub_diabetes, function(x) (x - mean(x)) / sd(x)))
+head(sub_diabetes_norm)
+
+diabetes[,1:8]<-sub_diabetes_norm[,1:8]
+
+sd_values_normalized <- apply(diabetes[,-9], 2, sd)
+head(sd_values_normalized)
+
+head(diabetes)
+```
+5. Build the model 
+
+Part 1: Balance and Leave out 30% 
+
+```{r}
+# Separate the dataset into features and outcome variable
+features <- diabetes[, -9]
+outcome <- diabetes$Outcome
+
+# Balance the dataset --> balancing the classes by randomly undersampling the majority class (class with more samples) to match the number of samples in the minority class (class with fewer samples).
+
+all_0 <- diabetes[outcome == 0, ] 
+all_1 <- diabetes[outcome == 1, ]
+
+
+sampled_0 <- all_0[sample(nrow(all_0), nrow(all_1)), ]
+balanced_diabetes <- rbind(sampled_0, all_1)
+
+head(balanced_diabetes)
+
+# Randomly remove 20% of the data and save it as test_set and the other 80% as training_set. 
+train_indices <- sample(1:nrow(balanced_diabetes), round(0.7 * nrow(balanced_diabetes)))
+
+# create the training set
+training_set <- balanced_diabetes[train_indices, ]
+
+# create the test set
+test_set <- balanced_diabetes[-train_indices, ]
+
+#Print out the number of observations for each diagnosis class in the training_set and the test_set.
+cat("Training Set:")
+cat('\n')
+print(table(training_set$Outcome))
+
+cat("\nTest Set:")
+cat('\n')
+print(table(test_set$Outcome))
+
+```
+Part 2: Logistic Regression 
+2.1 Logistic Regression for each variable --> compare it with graphs above 
+
+```{r}
+# conduct a logistic regression 
+# Using the training_set, create a logistic regression model for each mean normalized feature separately
+model_preg <- glm(Outcome ~ Pregnancies, data = training_set, family = "binomial")
+model_glucose <- glm(Outcome ~ Glucose, data = training_set, family = "binomial")
+model_BP <- glm(Outcome ~ BloodPressure, data = training_set, family = "binomial")
+model_ST <- glm(Outcome ~ SkinThickness, data = training_set, family = "binomial")
+model_insulin <- glm(Outcome ~ Insulin, data = training_set, family = "binomial")
+model_BMI <- glm(Outcome ~ BMI, data = training_set, family = "binomial")
+model_DPF <- glm(Outcome ~ DiabetesPedigreeFunction, data = training_set, family = "binomial")
+model_Age <- glm(Outcome ~ Age, data = training_set, family = "binomial")
+
+```
+Test the models using test_set 
+```{r}
+#subset the relevant columns from test_set and store them into test_set_normalized
+test_set_variables <- test_set[, -9]
+
+#Test the models using the columns in test_set
+pred_preg <- predict(model_preg, newdata = test_set_variables, type = "response")
+pred_glucose <- predict(model_glucose, newdata = test_set_variables, type = "response")
+pred_ST <- predict(model_ST, newdata = test_set_variables, type = "response")
+pred_insulin <- predict(model_insulin, newdata = test_set_variables, type = "response")
+pred_BMI <- predict(model_BMI, newdata = test_set_variables, type = "response")
+pred_DPF<- predict(model_DPF, newdata = test_set_variables, type = "response")
+pred_age <- predict(model_Age, newdata = test_set_variables, type = "response")
+
+```
+
+```{r}
+pr_perf_preg = pred_preg
+# Set any value of `pred_preg` greater than 0.5 to 1 in `pr_perf_preg`
+pr_perf_preg[pred_preg>0.5]=1
+# Set any value of `pred_preg` less than or equal to 0.5 to 0 in `pr_perf_preg`
+pr_perf_preg[pred_preg<=0.5]=0
+  
+pr_perf_glucose = pred_glucose
+pr_perf_glucose[pred_glucose>0.5]=1
+pr_perf_glucose[pred_glucose<=0.5]=0
+
+pr_perf_ST = pred_ST
+pr_perf_ST[pred_ST>0.5]=1
+pr_perf_ST[pred_ST<=0.5]=0
+
+pr_perf_insulin = pred_insulin
+pr_perf_insulin[pred_insulin>0.5]=1
+pr_perf_insulin[pred_insulin<=0.5]=0
+
+pr_perf_BMI = pred_BMI
+pr_perf_BMI[pred_BMI>0.5]=1
+pr_perf_BMI[pred_BMI<=0.5]=0
+
+pr_perf_DPF = pred_DPF
+pr_perf_DPF[pred_DPF>0.5]=1
+pr_perf_DPF[pred_DPF<=0.5]=0
+
+pr_perf_age = pred_age
+pr_perf_age[pred_age>0.5]=1
+pr_perf_age[pred_age<=0.5]=0
+```
+Finding the accuracy of the models
+```{r}
+# Use 'table' function to create the confusion matrix and pass in the actual labels and the predicted labels for the 'Pregnancy' performance measure from the 'test_set' data.
+confmat_preg<-table(test_set[,"Outcome"], pr_perf_preg, dnn=c("actual", "predicted"))
+# Print the number of true positives, true negatives, false positives, and false negatives for the 'Pregnancy' performance measure.
+confmat_preg
+
+confmat_glucose<-table(test_set[,"Outcome"], pr_perf_glucose, dnn=c("actual", "predicted"))
+confmat_glucose
+
+confmat_ST<-table(test_set[,"Outcome"], pr_perf_ST, dnn=c("actual", "predicted"))
+confmat_ST
+
+confmat_insulin<-table(test_set[,"Outcome"], pr_perf_insulin, dnn=c("actual", "predicted"))
+confmat_insulin
+
+confmat_BMI<-table(test_set[,"Outcome"], pr_perf_BMI, dnn=c("actual", "predicted"))
+confmat_BMI
+
+confmat_DPF<-table(test_set[,"Outcome"], pr_perf_DPF, dnn=c("actual", "predicted"))
+confmat_DPF
+
+confmat_age<-table(test_set[,"Outcome"], pr_perf_age, dnn=c("actual", "predicted"))
+confmat_age
+```
+Use AUC to determine which model performed best
+
+```{r}
+# use the AUC to determine which of the models performed the best
+pregauc <- roc(test_set$Outcome, pr_perf_preg)$auc
+glucoseauc <- roc(test_set$Outcome, pr_perf_glucose)$auc
+STauc <- roc(test_set$Outcome, pr_perf_ST)$auc
+insulinauc <- roc(test_set$Outcome, pr_perf_insulin)$auc
+BMIauc <- roc(test_set$Outcome, pr_perf_BMI)$auc
+DPFauc <- roc(test_set$Outcome, pr_perf_DPF)$auc
+ageauc <- roc(test_set$Outcome, pr_perf_age)$auc
+
+cat("AUC of preg model: ", pregauc, "\n")
+cat("AUC of glucose model: ", glucoseauc, "\n")
+cat("AUC of ST model: ", STauc, "\n")
+cat("AUC of insulin model: ", insulinauc, "\n")
+cat("AUC of BMI model: ", BMIauc, "\n")
+cat("AUC of DPF model: ", DPFauc, "\n")
+cat("AUC of age model: ", ageauc, "\n")
+
+all_model <- c(preg = pregauc, glucose = glucoseauc, ST = STauc, insulin = insulinauc, BMI = BMIauc, DPF = DPFauc, age = ageauc)
+
+# Rank the independent models based on AUC
+all_model <- sort(all_model, decreasing = TRUE)
+
+#provide the ranking
+cat("Ranking of the independent models based on AUC (from highest to lowest): ")
+cat(names(all_model), sep=', ')
+```
+2.2: Logistic regression using all variables in one model 
+
+Train on all the features in one model and test the model using the entire test_set
+```{r}
+# creating a logistic regression model using all the features 
+all_models_LR <- glm(Outcome ~ Pregnancies + Glucose + BloodPressure + SkinThickness + Insulin + BMI + DiabetesPedigreeFunction + Age, data = training_set, family = "binomial")
+
+# test the model using the entire test_set
+pred_all <- predict(all_models_LR, newdata = test_set, type = "response")
+
+pr.perf_all = pred_all
+pr.perf_all[pred_all>0.5]=1 
+pr.perf_all[pred_all<=0.5]=0 
+
+confmat_all<-table(test_set[,"Outcome"], 
+               pr.perf_all, 
+               dnn=c("actual", "predicted")) 
+confmat_all <- data.frame(confmat_all)
+confmat_all$actual <- ifelse(confmat_all$actual == "B", 0, 1)
+confmat_all
+
+# Calculating the AUC of the model using all variables 
+allvarauc_lr <- roc(test_set$Outcome, pr.perf_all)$auc
+
+cat("AUC of all variables:", allvarauc_lr)
+cat("\n")
+
+#The AUC of the model using all variables is better than the AUC of the top ranked independent model because the AUC of the former is higher than that of the top ranked independent model. 
+
+```
+Calculating the coefficient
+```{r}
+#Provide the coefficients
+coefs <- all_models_LR$coefficients
+coefs <- subset(coefs, names(coefs) != "(Intercept)", decreasing = TRUE)
+coefs
+
+```
+Part 3: Decision Trees
+
+3.1: Plot Decision Tree using the Training Data
+```{r}
+# Using the training_set, create a decision tree
+diabetes.fit<-ctree(formula= Outcome ~ Pregnancies + Glucose + BloodPressure + SkinThickness + Insulin + BMI + DiabetesPedigreeFunction + Age, data=training_set)
+
+diabetes.fit
+
+plot(diabetes.fit)
+
+# provide the accuracy of the model on the training set 
+lr.fold<-glm(formula = Outcome ~ Pregnancies + Glucose + BloodPressure + SkinThickness + Insulin + BMI + DiabetesPedigreeFunction + Age,
+             family="binomial", 
+             data=training_set) 
+CVbinary(lr.fold)
+```
+3.2: Testing the Model 
+```{r}
+# Test the model using the test_set
+pred_ctree<- predict(diabetes.fit, newdata = test_set, type = "response")
+pred_ctree.df = t(as.data.frame(as.numeric(pred_ctree)))
+vect <- c(pred_ctree.df)
+
+outcome_test <- test_set$Outcome
+roc_result = roc(vect, as.numeric(outcome_test))
+
+# calculate the AUC
+auc_best_ctree<-auc(roc_result)
+
+# provide the AUC
+cat("AUC of all variables:", auc_best_ctree) 
+```
+3.3: Plotting the Decision Tree using the Test Data
+```{r}
+diabetes_test.fit<-ctree(formula=Outcome ~ Pregnancies + Glucose + BloodPressure + SkinThickness + Insulin + BMI + DiabetesPedigreeFunction + Age, data=test_set)
+diabetes_test.fit
+plot(diabetes_test.fit)
+
+```
+
+Part 4: Random Forest
+
+```{r}
+# Create a vector of mtry values to try for hyperparameter tuning
+mtry_values <- 2:10
+
+# Initialize an empty list to store the AUC values for each model
+auc_list_rf <- list()
+
+# Fit a random forest model for each mtry value and compute its AUC value
+for (mtry in mtry_values) {
+  # Fit the model
+  model <- randomForest(Outcome ~ Pregnancies + Glucose + BloodPressure + SkinThickness + Insulin + BMI + DiabetesPedigreeFunction + Age, 
+                        data = training_set, importance = TRUE, mtry = mtry)
+  # Compute the AUC value on the training set
+  pred <- predict(model, newdata = training_set, type = "response")
+  auc_list_rf[[as.character(mtry)]] <- roc(training_set$Outcome, as.numeric(pred))$auc
+}
+
+# Identify the mtry value with the highest AUC value
+best_mtry <- names(auc_list_rf)[which.max(unlist(auc_list_rf))]
+
+# Fit a random forest model using the best mtry value
+model_best_RF <- randomForest(Outcome ~ Pregnancies + Glucose + BloodPressure + SkinThickness + Insulin + BMI + DiabetesPedigreeFunction + Age, 
+                            data = training_set, importance = TRUE, mtry = as.numeric(best_mtry))
+
+# Compute the AUC value on the testing set
+pred_best <- predict(model_best_RF, newdata = test_set, type = "response")
+auc_best_rf <- roc(test_set$Outcome, as.numeric(pred_best))$auc
+
+cat("Best mtry value:", best_mtry, "\n")
+cat("AUC of the best model:", auc_best_rf, "\n")
+
+# Plot the variable importance
+varImpPlot(model_best_RF, main = paste0("mtry = ", best_mtry))
+
+
+roc_curve <- roc(test_set$Outcome, as.numeric(pred_best))
+plot(roc_curve, print.thres = "best", print.auc = TRUE, main = paste("ROC Curve ~ Best Model \n with mtry =", best_mtry))
+
+```
+
+Part 5: KNN 
+
+```{r}
+
+test_set_variables <- test_set[, -9]
+
+train_set_variables <- training_set[, -9]
+
+# Create a vector of k values to try for hyperparameter tuning
+max_k <- 50
+
+k_values <- seq(from = 5, to = max_k, by = 5)
+
+# Initialize an empty list to store the AUC values for each model
+auc_list_knn <- list()
+
+# Fit a KNN model for each k value and compute its AUC value
+for (k in k_values) {
+  # Fit the model
+  knn_model <- knn(train = train_set_variables, 
+                   test = test_set_variables, 
+                   cl = training_set$Outcome, 
+                   k = k, prob = TRUE)
+  
+  test_1 = which(knn_model == 1)
+  attr(knn_model, "prob")[test_1] = 1 - attr(knn_model, "prob")[test_1]
+  
+  # Compute the AUC value
+  data.knn.prob.roc = roc(as.numeric(attr(knn_model,"prob")),
+                        as.numeric(test_set$Outcome))
+  auc_value = auc(data.knn.prob.roc)
+  #data.knn.prob.roc <- roc(test_set$Outcome, prob[, "1"])
+  #auc_value <- auc(data.knn.prob.roc)
+  auc_list_knn[[as.character(k)]] <- auc_value
+}
+
+# Identify the k value with the highest AUC value
+best_k <- names(auc_list_knn)[which.max(unlist(auc_list_knn))]
+
+# Fit a KNN model using the best k value
+
+model_best_knn <- knn(train = train_set_variables, 
+                      test = test_set_variables, 
+                      cl = training_set$Outcome, 
+                      k = as.numeric(best_k), prob = TRUE)
+
+test_1 = which(model_best_knn == 1)
+attr(model_best_knn, "prob")[test_1] = 1 - attr(model_best_knn, "prob")[test_1]
+
+data.knn.prob.roc.test = roc(as.numeric(attr(model_best_knn,"prob")),
+                        as.numeric(test_set$Outcome))
+auc_best_knn = auc(data.knn.prob.roc.test)
+
+cat("Best k value:", best_k, "\n")
+cat("AUC of the best model:", auc_best_knn, "\n")
+
+```
+
+Part 6: SVM Model 
+
+```{r}
+# Define the values to test for the cost parameter
+
+max_c <- 100
+
+c_values <- seq(from = 5, to = max_c, by = 5)
+
+# Define the types of kernels to test
+kernel_types <- c("linear", "polynomial", "radial")
+
+# Create a matrix to store the AUC values for each combination of kernel and cost
+auc.matrix <- matrix(nrow = length(kernel_types), ncol = length(c_values))
+rownames(auc.matrix) <- kernel_types
+colnames(auc.matrix) <- c_values
+
+
+# Train and test SVM models using different types of kernels and different values of the cost parameter
+for (i in 1:length(kernel_types)) {
+  for (j in 1:length(c_values)) {
+    svm_model <- svm(Outcome ~ Pregnancies + Glucose + BloodPressure + SkinThickness + Insulin + BMI + DiabetesPedigreeFunction + Age, data =   training_set, kernel = kernel_types[i], cost = c_values[j], probability = T)
+    
+    data.svm.pred.prob = predict(svm_model, test_set, 
+                             probability=T)
+    
+    data.svm.pred.prob.mat = attr(data.svm.pred.prob, "probabilities")
+    
+    datasvmroc = roc(as.numeric(data.svm.pred.prob.mat[,2]), as.numeric(test_set$Outcome))
+    
+    auc.matrix[i,j] <- auc(datasvmroc)
+  }
+}
+
+# Find the combination of kernel and cost that has the highest AUC
+best.auc <- max(auc.matrix)
+best.kernel <- rownames(auc.matrix)[ifelse(length(which(auc.matrix == best.auc, arr.ind = TRUE)) == 0, 1, which(auc.matrix == best.auc, arr.ind = TRUE)[1,1])]
+best.cost <- colnames(auc.matrix)[ifelse(length(which(auc.matrix == best.auc, arr.ind = TRUE)) == 0, 1, which(auc.matrix == best.auc, arr.ind = TRUE)[1,2])]
+
+
+# Train the final SVM model using the best combination of kernel and cost
+model_best_svm <- svm(Outcome ~ Pregnancies + Glucose + BloodPressure + SkinThickness + Insulin + BMI + DiabetesPedigreeFunction + Age, data = training_set, kernel = best.kernel, cost = best.cost, probability = T)
+
+data.svm.pred.prob.test = predict(model_best_svm, test_set, 
+                             probability=T)
+
+data.svm.pred.prob.mat.test = attr(data.svm.pred.prob, "probabilities")
+
+datasvmroc.test = roc(as.numeric(data.svm.pred.prob.mat.test[,2]), as.numeric(test_set$Outcome))
+
+auc_best_svm <- auc(datasvmroc.test)
+
+cat("Best c value:", best.cost, "\n")
+cat("Best kernel type:", best.kernel, "\n")
+
+cat("AUC of the best model:", auc_best_svm, "\n")
+```
+ 
+Part 7: Neural Networks 
+
+Neural networks take a set of inputs and create a function for each to help predict the output. The functions are randomly initialized and then progressively improved to best fit the data.
+
+7.1: Fixing zero values
+```{r}
+diabetes_nn <- read.csv("PimaIndiansDiabetes.csv", header = T) #read the data.csv in and call it cancer_data
+
+#Solve missing values
+diabetes0_nn <- diabetes_nn[, c("Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI")]
+
+diabetes0_nn[diabetes0_nn=='0']=NA #Replacing 0 with NA 
+
+summary(diabetes0_nn) #show the NA present in each variable 
+
+diabetes0_nn<-kNN(diabetes0_nn,k=sqrt(nrow(diabetes0_nn))) #KNN Imputation method to remove NA. The square root of number of rows in the dataset because the "optimal K value usually found is the square root of N, where N is the total number of samples".
+
+summary(diabetes0_nn)  
+
+#extract the necessary variables 
+diabetes0_nn=diabetes0_nn[,1:5]
+
+#Replace processed variables back into the dataset
+
+diabetes_nn$Glucose=diabetes0_nn$Glucose
+diabetes_nn$BloodPressure=diabetes0_nn$BloodPressure
+diabetes_nn$SkinThickness=diabetes0_nn$SkinThickness
+diabetes_nn$Insulin=diabetes0_nn$Insulin
+diabetes_nn$BMI=diabetes0_nn$BMI
+
+summary(diabetes_nn)
+```
+
+7.2: Scaling data
+```{r}
+#scale the data 
+
+maxs = apply(diabetes_nn[,-9], 2, max)
+mins = apply(diabetes_nn[,-9], 2, min)
+
+scaled.data = as.data.frame(scale(diabetes_nn[,-9],
+                                  center=mins,
+                                  scale = maxs-mins))
+
+results <- diabetes_nn$Outcome
+
+scaled.data.df = cbind(scaled.data, results)
+
+head(scaled.data.df)
+# Balance the dataset --> balancing the classes by randomly undersampling the majority class (class with more samples) to match the number of samples in the minority class (class with fewer samples).
+
+```
+
+7.3 Partitioning the Data 
+```{r}
+features <- scaled.data.df[, -9]
+outcome <- scaled.data.df$results
+
+all_0_nn <- scaled.data.df[outcome == 0, ] 
+all_1_nn <- scaled.data.df[outcome == 1, ]
+
+sampled_0_nn <- all_0_nn[sample(nrow(all_0_nn), nrow(all_1_nn)), ]
+
+balanced_diabetes_nn <- rbind(sampled_0_nn, all_1_nn)
+
+# Randomly remove 20% of the data and save it as test_set and the other 80% as training_set. 
+train_indices_nn <- sample(1:nrow(balanced_diabetes_nn), round(0.8 * nrow(balanced_diabetes_nn)))
+
+# create the training set
+training_set_nn <- balanced_diabetes_nn[train_indices_nn, ]
+
+# create the test set
+test_set_nn <- balanced_diabetes_nn[-train_indices_nn, ]
+
+```
+
+7.4 Building Model
+```{r}
+
+test_set_nn_var <- test_set_nn[,-9]
+
+# Define the values to hidden nodes
+
+n_values <- c(5, 10, 15, 20)
+
+# Initialize an empty list to store the AUC values for each model
+auc_list_nn <- list()
+
+# Fit a NN model for each k value and compute its AUC value
+for (n in n_values) {
+  # Fit the model
+  nn_model <- neuralnet(results ~ Pregnancies + Glucose + BloodPressure + SkinThickness + Insulin + BMI + DiabetesPedigreeFunction + Age, 
+                   data= training_set_nn, 
+                   hidden = c(n), rep=1, linear.output = F)
+  
+  nn_results = compute(nn_model, test_set_nn_var)$net.result
+  
+  data.nn.roc = roc(as.numeric(nn_results), as.numeric(test_set_nn$results))
+  
+  auc_value_nn = auc(data.nn.roc)
+  
+  auc_list_nn[[as.character(n)]] <- auc_value_nn
+}
+
+# Identify the n value with the highest AUC value
+best_n <- names(auc_list_nn)[which.max(unlist(auc_list_nn))]
+
+# Fit a NN model using the best n value
+best.model.nn = neuralnet(results ~ Pregnancies + Glucose + BloodPressure + SkinThickness + Insulin + BMI + DiabetesPedigreeFunction + Age, data= training_set_nn, hidden=c(as.numeric(n)), rep=1, linear.output = F)
+
+best.model.nn.results = compute(best.model.nn, test_set_nn_var)$net.result
+
+data.nn.roc.best = roc(as.numeric(best.model.nn.results), as.numeric(test_set_nn$results))
+
+best_auc_value_nn = auc(data.nn.roc.best)
+
+cat("Best n value:", best_n, "\n")
+cat("AUC of the best model:", best_auc_value_nn, "\n")
+
+```
+
+Model Comparison
+```{r}
+finalauc<-c(allvarauc_lr, auc_best_ctree, auc_best_rf, auc_best_knn, auc_best_svm, best_auc_value_nn)
+aucnames<-c("LR", "DTree", "Random Forest", "KNN", "SVM", "Neural Network")
+highest_value <- max(finalauc)
+
+# Create the bar plot with different colors for the highest value
+barplot(finalauc, col=ifelse(finalauc==highest_value, "blue", "green"), 
+        main="AUC Across All Models", 
+        xlab="Models", ylab="AUC", names.arg=aucnames, cex.names=0.8)
+
+#The blue colored column indicates the variable which has the highest AUC. According to the barplot, the Logistic Regression Model pertaining to all the variables have the highest AUC, suggesting that the model has the best discrimination performance whereby it is able to distinguish between the diabetic and non-diabetic cases with a high degree of accuracy.
+```
